@@ -56,6 +56,8 @@ function getDisplayName(WrappedComponent) {
 // Helps track hot reloading.
 let nextVersion = 0;
 
+let globalErrorHandler: Function | null = null;
+
 export default function graphql<
   TProps = {},
   TData = {},
@@ -543,19 +545,23 @@ export default function graphql<
           // potential asynchrony in React rendering. It is not super important
           // that the error be logged ASAP, but 10 ms is enough to make it
           // _feel_ like it was logged ASAP while still tolerating asynchrony.
-          let logErrorTimeoutId = setTimeout(() => {
+          let unhandledErrorTimeoutId = setTimeout(() => {
             if (error) {
-              console.error(
-                `Unhandled (in react-apollo:${graphQLDisplayName})`,
-                error.stack || error,
-              );
+              if (globalErrorHandler != null) {
+                globalErrorHandler(error);
+              } else {
+                console.error(
+                  `Unhandled (in react-apollo:${graphQLDisplayName})`,
+                  error.stack || error,
+                );
+              }
             }
           }, 10);
           Object.defineProperty(data, 'error', {
             configurable: true,
             enumerable: true,
             get: () => {
-              clearTimeout(logErrorTimeoutId);
+              clearTimeout(unhandledErrorTimeoutId);
               return error;
             },
           });
@@ -624,4 +630,8 @@ export default function graphql<
   }
 
   return wrapWithApolloComponent;
+}
+
+export function setGlobalErrorHandler(func) {
+  globalErrorHandler = func;
 }

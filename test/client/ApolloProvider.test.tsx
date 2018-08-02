@@ -5,12 +5,12 @@ import * as TestUtils from 'react-dom/test-utils';
 import ApolloClient from 'apollo-client';
 import { InMemoryCache as Cache } from 'apollo-cache-inmemory';
 import { ApolloLink } from 'apollo-link';
-import ApolloProvider from '../../src/ApolloProvider';
+import { ApolloProvider } from '../../src';
 
 describe('<ApolloProvider /> Component', () => {
   const client = new ApolloClient({
     cache: new Cache(),
-    link: new ApolloLink((o, f) => f(o)),
+    link: new ApolloLink((o, f) => (f ? f(o) : null)),
   });
 
   interface ChildContext {
@@ -22,7 +22,9 @@ describe('<ApolloProvider /> Component', () => {
       client: PropTypes.object.isRequired,
     };
 
-    context: ChildContext;
+    context: ChildContext = {
+      client: {},
+    };
 
     render() {
       return null;
@@ -33,8 +35,12 @@ describe('<ApolloProvider /> Component', () => {
     }
   }
 
-  class Container extends React.Component<any, any> {
-    constructor(props) {
+  interface Props {
+    client: ApolloClient<any>;
+  }
+
+  class Container extends React.Component<Props, any> {
+    constructor(props: Props) {
       super(props);
       this.state = {};
     }
@@ -111,12 +117,12 @@ describe('<ApolloProvider /> Component', () => {
     };
     expect(() => {
       shallow(
-        <ApolloProvider client={undefined}>
+        <ApolloProvider client={undefined as any}>
           <div className="unique" />
         </ApolloProvider>,
       );
     }).toThrowError(
-      'ApolloClient was not passed a client instance. Make ' +
+      'ApolloProvider was not passed a client instance. Make ' +
         'sure you pass in your client via the "client" prop.',
     );
     console.error = originalConsoleError;
@@ -145,15 +151,18 @@ describe('<ApolloProvider /> Component', () => {
   //   console.error = originalConsoleError;
   // });
 
-  it('should add the client to the child context', () => {
+  it('should add the client to the children context', () => {
     const tree = TestUtils.renderIntoDocument(
       <ApolloProvider client={client}>
+        <Child />
         <Child />
       </ApolloProvider>,
     ) as React.Component<any, any>;
 
-    const child = TestUtils.findRenderedComponentWithType(tree, Child);
-    expect(child.context.client).toEqual(client);
+    const children = TestUtils.scryRenderedComponentsWithType(tree, Child);
+
+    expect(children).toHaveLength(2);
+    children.forEach(child => expect(child.context.client).toEqual(client));
   });
 
   it('should update props when the client changes', () => {
@@ -162,7 +171,7 @@ describe('<ApolloProvider /> Component', () => {
 
     const newClient = new ApolloClient({
       cache: new Cache(),
-      link: new ApolloLink((o, f) => f(o)),
+      link: new ApolloLink((o, f) => (f ? f(o) : null)),
     });
     container.setState({ client: newClient });
     expect(container.find(ApolloProvider).props().client).toEqual(newClient);
@@ -179,7 +188,7 @@ describe('<ApolloProvider /> Component', () => {
 
     const newClient = new ApolloClient({
       cache: new Cache(),
-      link: new ApolloLink((o, f) => f(o)),
+      link: new ApolloLink((o, f) => (f ? f(o) : null)),
     });
 
     container.setState({ client: newClient });

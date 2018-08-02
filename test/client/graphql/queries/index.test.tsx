@@ -4,14 +4,16 @@ import * as renderer from 'react-test-renderer';
 import gql from 'graphql-tag';
 import ApolloClient from 'apollo-client';
 import { InMemoryCache as Cache } from 'apollo-cache-inmemory';
+import { ApolloLink } from 'apollo-link';
 import { mockSingleLink } from '../../../../src/test-utils';
-import { ApolloProvider, graphql, DataProps } from '../../../../src';
+import { ApolloProvider, graphql, DataProps, ChildProps } from '../../../../src';
 
 import stripSymbols from '../../../test-utils/stripSymbols';
 import catchAsyncError from '../../../test-utils/catchAsyncError';
+import { DocumentNode } from 'graphql';
 
 describe('queries', () => {
-  let error;
+  let error: typeof console.error;
   beforeEach(() => {
     error = console.error;
     console.error = jest.fn(() => {}); // tslint:disable-line
@@ -22,7 +24,7 @@ describe('queries', () => {
 
   // general api
   it('binds a query to props', () => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people {
         allPeople(first: 1) {
           people {
@@ -46,13 +48,11 @@ describe('queries', () => {
       };
     }
 
-    const ContainerWithData = graphql<any, Data>(query)(
-      ({ data }: DataProps<Data>) => {
-        expect(data).toBeTruthy();
-        expect(data.loading).toBeTruthy();
-        return null;
-      },
-    );
+    const ContainerWithData = graphql<any, Data>(query)(({ data }: DataProps<Data>) => {
+      expect(data).toBeTruthy();
+      expect(data.loading).toBeTruthy();
+      return null;
+    });
 
     const output = renderer.create(
       <ApolloProvider client={client}>
@@ -63,7 +63,7 @@ describe('queries', () => {
   });
 
   it('includes the variables in the props', () => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people($first: Int) {
         allPeople(first: $first) {
           people {
@@ -97,10 +97,10 @@ describe('queries', () => {
       first: number;
     }
 
-    const ContainerWithData = graphql<any, Data, Variables>(query)(
-      ({ data }: DataProps<Data, Variables>) => {
+    const ContainerWithData = graphql<Variables, Data, Variables>(query)(
+      ({ data }: ChildProps<Variables, Data, Variables>) => {
         expect(data).toBeTruthy();
-        expect(data.variables).toEqual(variables);
+        expect(data!.variables).toEqual(variables);
         return null;
       },
     );
@@ -114,8 +114,8 @@ describe('queries', () => {
 
   it("shouldn't warn about fragments", () => {
     const oldWarn = console.warn;
-    const warnings = [];
-    console.warn = str => warnings.push(str);
+    const warnings: any[] = [];
+    console.warn = (str: any) => warnings.push(str);
 
     try {
       graphql(
@@ -132,7 +132,7 @@ describe('queries', () => {
   });
 
   it('executes a query', done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people {
         allPeople(first: 1) {
           people {
@@ -142,6 +142,8 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const link = mockSingleLink({
       request: { query },
       result: { data },
@@ -151,17 +153,18 @@ describe('queries', () => {
       cache: new Cache({ addTypename: false }),
     });
 
-    @graphql(query)
-    class Container extends React.Component<any, any> {
-      componentWillReceiveProps(props) {
-        expect(props.data.loading).toBeFalsy();
-        expect(stripSymbols(props.data.allPeople)).toEqual(data.allPeople);
-        done();
-      }
-      render() {
-        return null;
-      }
-    }
+    const Container = graphql<{}, Data>(query)(
+      class extends React.Component<ChildProps<{}, Data>> {
+        componentWillReceiveProps(props: ChildProps<{}, Data>) {
+          expect(props.data!.loading).toBeFalsy();
+          expect(stripSymbols(props.data!.allPeople)).toEqual(data.allPeople);
+          done();
+        }
+        render() {
+          return null;
+        }
+      },
+    );
 
     renderer.create(
       <ApolloProvider client={client}>
@@ -171,7 +174,7 @@ describe('queries', () => {
   });
 
   it('executes a query with two root fields', done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people {
         allPeople(first: 1) {
           people {
@@ -189,6 +192,8 @@ describe('queries', () => {
       allPeople: { people: [{ name: 'Luke Skywalker' }] },
       otherPeople: { people: [{ name: 'Luke Skywalker' }] },
     };
+    type Data = typeof data;
+
     const link = mockSingleLink({
       request: { query },
       result: { data },
@@ -198,18 +203,19 @@ describe('queries', () => {
       cache: new Cache({ addTypename: false }),
     });
 
-    @graphql(query)
-    class Container extends React.Component<any, any> {
-      componentWillReceiveProps(props) {
-        expect(props.data.loading).toBeFalsy();
-        expect(stripSymbols(props.data.allPeople)).toEqual(data.allPeople);
-        expect(stripSymbols(props.data.otherPeople)).toEqual(data.otherPeople);
-        done();
-      }
-      render() {
-        return null;
-      }
-    }
+    const Container = graphql<{}, Data>(query)(
+      class extends React.Component<ChildProps<{}, Data>> {
+        componentWillReceiveProps(props: ChildProps<{}, Data>) {
+          expect(props.data!.loading).toBeFalsy();
+          expect(stripSymbols(props.data!.allPeople)).toEqual(data.allPeople);
+          expect(stripSymbols(props.data!.otherPeople)).toEqual(data.otherPeople);
+          done();
+        }
+        render() {
+          return null;
+        }
+      },
+    );
 
     renderer.create(
       <ApolloProvider client={client}>
@@ -219,7 +225,7 @@ describe('queries', () => {
   });
 
   it('maps props as variables if they match', done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people($first: Int) {
         allPeople(first: $first) {
           people {
@@ -229,7 +235,11 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const variables = { first: 1 };
+    type Vars = typeof variables;
+
     const link = mockSingleLink({
       request: { query, variables },
       result: { data },
@@ -239,20 +249,19 @@ describe('queries', () => {
       cache: new Cache({ addTypename: false }),
     });
 
-    @graphql(query)
-    class Container extends React.Component<any, any> {
-      componentWillReceiveProps(props) {
-        expect(props.data.loading).toBeFalsy();
-        expect(stripSymbols(props.data.allPeople)).toEqual(data.allPeople);
-        expect(stripSymbols(props.data.variables)).toEqual(
-          this.props.data.variables,
-        );
-        done();
-      }
-      render() {
-        return null;
-      }
-    }
+    const Container = graphql<Vars, Data, Vars>(query)(
+      class extends React.Component<ChildProps<Vars, Data, Vars>> {
+        componentWillReceiveProps(props: ChildProps<Vars, Data, Vars>) {
+          expect(props.data!.loading).toBeFalsy();
+          expect(stripSymbols(props.data!.allPeople)).toEqual(data.allPeople);
+          expect(stripSymbols(props.data!.variables)).toEqual(this.props.data!.variables);
+          done();
+        }
+        render() {
+          return null;
+        }
+      },
+    );
 
     renderer.create(
       <ApolloProvider client={client}>
@@ -262,7 +271,7 @@ describe('queries', () => {
   });
 
   it("doesn't care about the order of variables in a request", done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people($first: Int, $jedi: Boolean) {
         allPeople(first: $first, jedi: $jedi) {
           people {
@@ -272,7 +281,10 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
     const variables = { jedi: true, first: 1 };
+    type Vars = typeof variables;
+
     const mocks = [
       {
         request: {
@@ -298,19 +310,20 @@ describe('queries', () => {
       },
     };
 
-    @graphql(query, options)
-    class Container extends React.Component<any, any> {
-      componentWillReceiveProps(props) {
-        catchAsyncError(done, () => {
-          expect(props.data.loading).toBeFalsy();
-          expect(stripSymbols(props.data.allPeople)).toEqual(data.allPeople);
-          done();
-        });
-      }
-      render() {
-        return null;
-      }
-    }
+    const Container = graphql<{}, Data, Vars>(query, options)(
+      class extends React.Component<ChildProps<{}, Data, Vars>> {
+        componentWillReceiveProps(props: ChildProps<{}, Data, Vars>) {
+          catchAsyncError(done, () => {
+            expect(props.data!.loading).toBeFalsy();
+            expect(stripSymbols(props.data!.allPeople)).toEqual(data.allPeople);
+            done();
+          });
+        }
+        render() {
+          return null;
+        }
+      },
+    );
 
     renderer.create(
       <ApolloProvider client={client}>
@@ -320,7 +333,7 @@ describe('queries', () => {
   });
 
   it('allows falsy values in the mapped variables from props', done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people($first: Int) {
         allPeople(first: $first) {
           people {
@@ -330,7 +343,11 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const variables = { first: null };
+    type Vars = typeof variables;
+
     const link = mockSingleLink({
       request: { query, variables },
       result: { data },
@@ -340,17 +357,18 @@ describe('queries', () => {
       cache: new Cache({ addTypename: false }),
     });
 
-    @graphql(query)
-    class Container extends React.Component<any, any> {
-      componentWillReceiveProps(props) {
-        expect(props.data.loading).toBeFalsy();
-        expect(stripSymbols(props.data.allPeople)).toEqual(data.allPeople);
-        done();
-      }
-      render() {
-        return null;
-      }
-    }
+    const Container = graphql<Partial<Vars>, Data, Vars>(query)(
+      class extends React.Component<ChildProps<Partial<Vars>, Data, Vars>> {
+        componentWillReceiveProps(props: ChildProps<Partial<Vars>, Data, Vars>) {
+          expect(props.data!.loading).toBeFalsy();
+          expect(stripSymbols(props.data!.allPeople)).toEqual(data.allPeople);
+          done();
+        }
+        render() {
+          return null;
+        }
+      },
+    );
 
     renderer.create(
       <ApolloProvider client={client}>
@@ -360,7 +378,7 @@ describe('queries', () => {
   });
 
   it("doesn't error on optional required props", () => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people($first: Int) {
         allPeople(first: $first) {
           people {
@@ -370,7 +388,11 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const variables = { first: 1 };
+    type Vars = typeof variables;
+
     const link = mockSingleLink({
       request: { query, variables },
       result: { data },
@@ -379,7 +401,7 @@ describe('queries', () => {
       link,
       cache: new Cache({ addTypename: false }),
     });
-    const Container = graphql(query)(() => null);
+    const Container = graphql<Vars, Data>(query)(() => null);
 
     let errorCaught = null;
     try {
@@ -397,7 +419,7 @@ describe('queries', () => {
 
   // note this should log an error in the console until they are all cleaned up with react 16
   it("errors if the passed props don't contain the needed variables", done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people($first: Int!) {
         allPeople(first: $first) {
           people {
@@ -407,7 +429,11 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const variables = { first: 1 };
+    type Vars = typeof variables;
+
     const link = mockSingleLink({
       request: { query, variables },
       result: { data },
@@ -416,9 +442,13 @@ describe('queries', () => {
       link,
       cache: new Cache({ addTypename: false }),
     });
-    const Container = graphql(query)(() => null);
+
+    interface WrongProps {
+      frst: number;
+    }
+    const Container = graphql<WrongProps, Data, Vars>(query)(() => null);
     class ErrorBoundary extends React.Component {
-      componentDidCatch(e) {
+      componentDidCatch(e: Error) {
         expect(e.name).toMatch(/Invariant Violation/);
         expect(e.message).toMatch(/The operation 'people'/);
         done();
@@ -439,7 +469,7 @@ describe('queries', () => {
 
   // context
   it('allows context through updates', done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people {
         allPeople(first: 1) {
           people {
@@ -449,6 +479,8 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const link = mockSingleLink({
       request: { query },
       result: { data },
@@ -458,19 +490,20 @@ describe('queries', () => {
       cache: new Cache({ addTypename: false }),
     });
 
-    @graphql(query)
-    class Container extends React.Component<any, any> {
-      componentWillReceiveProps(props) {
-        expect(props.data.loading).toBeFalsy();
-        expect(stripSymbols(props.data.allPeople)).toEqual(data.allPeople);
-      }
-      render() {
-        return <div>{this.props.children}</div>;
-      }
-    }
+    const Container = graphql<{}, Data>(query)(
+      class extends React.Component<ChildProps<{}, Data>> {
+        componentWillReceiveProps(props: ChildProps<{}, Data>) {
+          expect(props.data!.loading).toBeFalsy();
+          expect(stripSymbols(props.data!.allPeople)).toEqual(data.allPeople);
+        }
+        render() {
+          return <div>{this.props.children}</div>;
+        }
+      },
+    );
 
-    class ContextContainer extends React.Component<any, any> {
-      constructor(props) {
+    class ContextContainer extends React.Component<{}, { color: string }> {
+      constructor(props: {}) {
         super(props);
         this.state = { color: 'purple' };
       }
@@ -526,7 +559,7 @@ describe('queries', () => {
 
   // meta
   it('stores the component name in the query metadata', done => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people {
         allPeople(first: 1) {
           people {
@@ -536,6 +569,8 @@ describe('queries', () => {
       }
     `;
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
+    type Data = typeof data;
+
     const link = mockSingleLink({
       request: { query },
       result: { data },
@@ -545,24 +580,26 @@ describe('queries', () => {
       cache: new Cache({ addTypename: false }),
     });
 
-    @graphql(query)
-    class Container extends React.Component<any> {
-      componentWillReceiveProps() {
-        const queries = client.queryManager.queryStore.getStore();
-        const queryIds = Object.keys(queries);
-        expect(queryIds.length).toEqual(1);
-        const queryFirst = queries[queryIds[0]];
-        expect(queryFirst.metadata).toEqual({
-          reactComponent: {
-            displayName: 'Apollo(Container)',
-          },
-        });
-        done();
-      }
-      render() {
-        return null;
-      }
-    }
+    const Container = graphql<{}, Data>(query)(
+      // tslint:disable-next-line:no-shadowed-variable
+      class Container extends React.Component<ChildProps<{}, Data>> {
+        componentWillReceiveProps() {
+          const queries = client.queryManager.queryStore.getStore();
+          const queryIds = Object.keys(queries);
+          expect(queryIds.length).toEqual(1);
+          const queryFirst = queries[queryIds[0]];
+          expect(queryFirst.metadata).toEqual({
+            reactComponent: {
+              displayName: 'Apollo(Container)',
+            },
+          });
+          done();
+        }
+        render() {
+          return null;
+        }
+      },
+    );
 
     renderer.create(
       <ApolloProvider client={client}>
@@ -572,7 +609,7 @@ describe('queries', () => {
   });
 
   it("uses a custom wrapped component name when 'alias' is specified", () => {
-    const query = gql`
+    const query: DocumentNode = gql`
       query people {
         allPeople(first: 1) {
           people {
@@ -585,12 +622,56 @@ describe('queries', () => {
       alias: 'withFoo',
     })
     class Container extends React.Component<any, any> {
-      render() {
+      render(): React.ReactNode {
         return null;
       }
     }
 
     // Not sure why I have to cast Container to any
     expect((Container as any).displayName).toEqual('withFoo(Container)');
+  });
+
+  it('passes context to the link', done => {
+    const query: DocumentNode = gql`
+      query people {
+        allPeople(first: 1) {
+          people {
+            name
+          }
+        }
+      }
+    `;
+    const link = new ApolloLink((o, f) => {
+      expect(o.getContext().fromProps).toBe(true);
+      done();
+      return f ? f(o) : null;
+    }).concat(
+      mockSingleLink({
+        request: { query },
+        result: {
+          data: { allPeople: { people: [{ name: 'Luke Skywalker' }] } },
+        },
+      }),
+    );
+    const client = new ApolloClient({
+      link,
+      cache: new Cache({ addTypename: false }),
+    });
+
+    interface Data {
+      allPeople?: {
+        people: { name: string }[];
+      };
+    }
+
+    const ContainerWithData = graphql<any, Data>(query, {
+      options: props => ({ context: { fromProps: props.context } }),
+    })(() => null);
+
+    renderer.create(
+      <ApolloProvider client={client}>
+        <ContainerWithData context={true} />
+      </ApolloProvider>,
+    );
   });
 });

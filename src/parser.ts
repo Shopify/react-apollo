@@ -19,8 +19,12 @@ export interface IDocumentDefinition {
   variables: VariableDefinitionNode[];
 }
 
+const cache = new Map();
+
 // the parser is mainly a safety check for the HOC
 export function parser(document: DocumentNode): IDocumentDefinition {
+  const cached = cache.get(document);
+  if (cached) return cached;
   // variables
   let variables, type, name;
 
@@ -42,23 +46,19 @@ export function parser(document: DocumentNode): IDocumentDefinition {
   );
 
   const queries = document.definitions.filter(
-    (x: DefinitionNode) =>
-      x.kind === 'OperationDefinition' && x.operation === 'query',
+    (x: DefinitionNode) => x.kind === 'OperationDefinition' && x.operation === 'query',
   );
 
   const mutations = document.definitions.filter(
-    (x: DefinitionNode) =>
-      x.kind === 'OperationDefinition' && x.operation === 'mutation',
+    (x: DefinitionNode) => x.kind === 'OperationDefinition' && x.operation === 'mutation',
   );
 
   const subscriptions = document.definitions.filter(
-    (x: DefinitionNode) =>
-      x.kind === 'OperationDefinition' && x.operation === 'subscription',
+    (x: DefinitionNode) => x.kind === 'OperationDefinition' && x.operation === 'subscription',
   );
 
   invariant(
-    !fragments.length ||
-      (queries.length || mutations.length || subscriptions.length),
+    !fragments.length || (queries.length || mutations.length || subscriptions.length),
     `Passing only a fragment to 'graphql' is not yet supported. ` +
       `You must include a query, subscription or mutation as well`,
   );
@@ -75,9 +75,7 @@ export function parser(document: DocumentNode): IDocumentDefinition {
   type = queries.length ? DocumentType.Query : DocumentType.Mutation;
   if (!queries.length && !mutations.length) type = DocumentType.Subscription;
 
-  const definitions = queries.length
-    ? queries
-    : mutations.length ? mutations : subscriptions;
+  const definitions = queries.length ? queries : mutations.length ? mutations : subscriptions;
 
   invariant(
     definitions.length === 1,
@@ -89,7 +87,14 @@ export function parser(document: DocumentNode): IDocumentDefinition {
 
   const definition = definitions[0] as OperationDefinitionNode;
   variables = definition.variableDefinitions || [];
-  let hasName = definition.name && definition.name.kind === 'Name';
-  name = hasName ? definition.name.value : 'data'; // fallback to using data if no name
-  return { name, type, variables };
+
+  if (definition.name && definition.name.kind === 'Name') {
+    name = definition.name.value;
+  } else {
+    name = 'data'; // fallback to using data if no name
+  }
+
+  const payload = { name, type, variables };
+  cache.set(document, payload);
+  return payload;
 }

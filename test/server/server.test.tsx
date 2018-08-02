@@ -2,47 +2,25 @@ import * as React from 'react';
 import ApolloClient from 'apollo-client';
 import { ApolloLink, Observable } from 'apollo-link';
 import {
-  execute,
+  print,
+  graphql as execute,
   GraphQLSchema,
   GraphQLObjectType,
   GraphQLList,
   GraphQLString,
   GraphQLID,
+  DocumentNode,
 } from 'graphql';
-import { graphql, ApolloProvider, renderToStringWithData } from '../../src';
+import { graphql, ApolloProvider, renderToStringWithData, ChildProps } from '../../src';
 import gql from 'graphql-tag';
 import { InMemoryCache as Cache } from 'apollo-cache-inmemory';
 
 describe('SSR', () => {
-  // it('should render the expected markup', (done) => {
-
-  //   const query = gql`query ssr { allPeople(first: 1) { people { name } } }`;
-  //   const data = { allPeople: { people: [ { name: 'Luke Skywalker' } ] } };
-  //   const link = mockSingleLink({ request: { query }, result: { data } });
-  //   const client = new ApolloClient({ link });
-
-  //   const Element = ({ ssr }) => (<div>{ssr.loading ? 'loading' : 'loaded'}</div>);
-  //   const WrappedElement = graphql(query)(Element);
-  //   const component = (<ApolloProvider client={client}><WrappedElement /></ApolloProvider>);
-
-  //   try {
-  //     const markup = ReactDOM.renderToString(component);
-  //     expect(markup).to.match(/loading/);
-  //     // We do a timeout to ensure the rest of the application does not fail
-  //     // after the render
-  //     setTimeout(() => done(), 10);
-  //   } catch (e) {
-  //     done(e);
-  //   }
-  // });
-
   describe('`renderToStringWithData`', () => {
     // XXX break into smaller tests
     // XXX mock all queries
     it('should work on a non trivial example', function() {
-      const planetMap = new Map([
-        ['Planet:1', { id: 'Planet:1', name: 'Tatooine' }],
-      ]);
+      const planetMap = new Map([['Planet:1', { id: 'Planet:1', name: 'Tatooine' }]]);
 
       const shipMap = new Map([
         [
@@ -93,7 +71,7 @@ describe('SSR', () => {
           name: { type: GraphQLString },
           films: {
             type: new GraphQLList(FilmType),
-            resolve: ({ films }) => films.map(id => filmMap.get(id)),
+            resolve: ({ films }) => films.map((id: string) => filmMap.get(id)),
           },
         },
       });
@@ -127,14 +105,7 @@ describe('SSR', () => {
       const apolloClient = new ApolloClient({
         link: new ApolloLink(config => {
           return new Observable(observer => {
-            execute(
-              Schema,
-              config.query,
-              null,
-              null,
-              config.variables,
-              config.operationName,
-            )
+            execute(Schema, print(config.query), null, null, config.variables, config.operationName)
               .then(result => {
                 observer.next(result);
                 observer.complete();
@@ -153,9 +124,9 @@ describe('SSR', () => {
             title
           }
         }
-      `)
+      ` as DocumentNode)
       class Film extends React.Component<any, any> {
-        render() {
+        render(): React.ReactNode {
           const { data } = this.props;
           if (data.loading) return null;
           const { film } = data;
@@ -163,7 +134,18 @@ describe('SSR', () => {
         }
       }
 
-      @graphql(gql`
+      interface ShipData {
+        ship: {
+          name: string;
+          films: { id: string }[];
+        };
+      }
+
+      interface ShipVariables {
+        id: string;
+      }
+
+      @graphql<ShipVariables, ShipData, ShipVariables>(gql`
         query data($id: ID!) {
           ship(id: $id) {
             name
@@ -172,15 +154,15 @@ describe('SSR', () => {
             }
           }
         }
-      `)
-      class Starship extends React.Component<any, any> {
-        render() {
+      ` as DocumentNode)
+      class Starship extends React.Component<ChildProps<ShipVariables, ShipData, ShipVariables>> {
+        render(): React.ReactNode {
           const { data } = this.props;
-          if (data.loading) return null;
+          if (!data || data.loading || !data.ship) return null;
           const { ship } = data;
           return (
             <div>
-              <h4>{ship.name} appeared in the following flims:</h4>
+              <h4>{ship.name} appeared in the following films:</h4>
               <br />
               <ul>
                 {ship.films.map((film, key) => (
@@ -194,21 +176,25 @@ describe('SSR', () => {
         }
       }
 
-      @graphql(
-        gql`
-          query data {
-            allShips {
-              id
-            }
+      interface AllShipsData {
+        allShips: { id: string }[];
+      }
+
+      @graphql<{}, AllShipsData>(gql`
+        query data {
+          allShips {
+            id
           }
-        `,
-      )
-      class AllShips extends React.Component<any, any> {
-        render() {
+        }
+      ` as DocumentNode)
+      class AllShips extends React.Component<ChildProps<{}, AllShipsData>> {
+        render(): React.ReactNode {
           const { data } = this.props;
           return (
             <ul>
-              {!data.loading &&
+              {data &&
+                !data.loading &&
+                data.allShips &&
                 data.allShips.map((ship, key) => (
                   <li key={key}>
                     <Starship id={ship.id} />
@@ -219,25 +205,25 @@ describe('SSR', () => {
         }
       }
 
-      @graphql(
-        gql`
-          query data {
-            allPlanets {
-              name
-            }
+      interface AllPlanetsData {
+        allPlanets: { name: string }[];
+      }
+
+      @graphql<{}, AllPlanetsData>(gql`
+        query data {
+          allPlanets {
+            name
           }
-        `,
-      )
-      class AllPlanets extends React.Component<any, any> {
-        render() {
+        }
+      ` as DocumentNode)
+      class AllPlanets extends React.Component<ChildProps<{}, AllPlanetsData>> {
+        render(): React.ReactNode {
           const { data } = this.props;
-          if (data.loading) return null;
+          if (!data || data.loading) return null;
           return (
             <div>
               <h1>Planets</h1>
-              {data.allPlanets.map((planet, key) => (
-                <div key={key}>{planet.name}</div>
-              ))}
+              {(data.allPlanets || []).map((planet, key) => <div key={key}>{planet.name}</div>)}
             </div>
           );
         }
